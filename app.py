@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import numpy as np
 import pandas as pd
 import pickle
@@ -110,12 +110,14 @@ st.markdown("""
     border: 1px solid #E5E7EB !important;
     border-radius: 16px !important;
     box-shadow: 0 4px 24px -4px rgba(37,99,235,0.08), 0 1.5px 6px -1px rgba(0,0,0,0.04) !important;
-    padding: 14px 14px 10px 14px !important;
+    padding: 14px 14px 70px 14px !important;
     margin-top: 4px !important;
     flex: 0 0 330px !important;
     width: 330px !important;
     max-width: 330px !important;
     position: relative !important;
+    overflow: hidden !important;
+    height: calc(100vh - 28px) !important;
   }
 }
 
@@ -186,7 +188,8 @@ st.markdown("""
   .block-container > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child [data-testid="stVerticalBlockBorderWrapper"] > div,
   .block-container > [data-testid="stVerticalBlock"] > div > [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child [data-testid="stVerticalBlockBorderWrapper"] > div,
   .block-container > [data-testid="stVerticalBlock"] > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child [data-testid="stVerticalBlockBorderWrapper"] > div {
-    height: calc(100vh - 140px) !important;
+    height: 100% !important;
+    overflow-y: auto !important;
   }
 }
 
@@ -415,16 +418,32 @@ div[data-baseweb="popover"] li[role="option"][aria-selected="true"] {
 }
 
 
-/* Sticky Predict button styling - sticks to bottom of the scrollable inner container */
-.block-container [data-testid="column"]:first-child div[data-testid="stButton"],
-.block-container [data-testid="stColumn"]:first-child div[data-testid="stButton"] {
-  position: sticky !important;
-  bottom: 0 !important;
-  background: #FFFFFF !important;
-  padding: 10px 0px 6px 0px !important;
-  border-top: 1px solid var(--border-color-light) !important;
-  z-index: 99 !important;
-  margin-top: auto !important;
+/* Predict button — absolutely pinned to bottom of the left panel */
+@media (min-width: 1201px) {
+  .block-container [data-testid="column"]:first-child div[data-testid="stButton"],
+  .block-container [data-testid="stColumn"]:first-child div[data-testid="stButton"] {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: #FFFFFF !important;
+    padding: 10px 14px 12px 14px !important;
+    border-top: 1px solid var(--border-color-light) !important;
+    z-index: 10 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* On mobile, just render normally */
+@media (max-width: 1200px) {
+  .block-container [data-testid="column"]:first-child div[data-testid="stButton"],
+  .block-container [data-testid="stColumn"]:first-child div[data-testid="stButton"] {
+    background: #FFFFFF !important;
+    padding: 10px 0px 6px 0px !important;
+    border-top: 1px solid var(--border-color-light) !important;
+    width: 100% !important;
+  }
 }
 
 
@@ -632,7 +651,7 @@ with left_col:
     """, unsafe_allow_html=True)
 
     # ── Scrollable container for all patient inputs ────────────────────────────
-    input_container = st.container(height=int(600), border=False)
+    input_container = st.container(height=int(500), border=False)
     with input_container:
         cp_map      = {"Typical Angina":0,"Atypical Angina":1,"Non-Anginal Pain":2,"Asymptomatic":3}
         exang_map   = {"No":0,"Yes":1}
@@ -656,11 +675,13 @@ with left_col:
         ca = st.selectbox("🚢 Number of Major Vessels (0-3)", [0,1,2,3])
         thal = st.selectbox("🧬 Thalassemia", list(thal_map.keys()))
 
-    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
     predict_clicked = st.button("🩺  Predict Risk", use_container_width=True)
     st.markdown("""<div style="font-size:9px;color:#94A3B8;text-align:center;margin-top:4px;line-height:1.3;">
       ⚕️ Educational purposes only. Not a medical advice substitute.</div>""", unsafe_allow_html=True)
-    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+
+    # Track which button was last pressed in session state
+    if predict_clicked:
+        st.session_state["active_view"] = "full"
 
 # ── Chart helpers ───────────────────────────────────────────────────────────────
 # ── Chart helpers ───────────────────────────────────────────────────────────────
@@ -909,534 +930,653 @@ with right_col:
         """, unsafe_allow_html=True)
 
 
-    # ── Build input & run prediction ────────────────────────────────────────
-    vals = {
-        "age": age, "sex": 1 if sex=="Male" else 0,
-        "chest_pain_type": cp_map[cp],
-        "resting_blood_pressure": trestbps,
-        "cholesterol": chol, "fbs": fbs_map[fbs],
-        "restecg": restecg_map[restecg], "max_heart_rate": thalach,
-        "exercise_induced_angina": exang_map[exang],
-        "oldpeak": oldpeak, "slope": slope_map[slope],
-        "major_vessels": ca, "thalassemia": thal_map[thal],
-    }
-    input_df    = pd.DataFrame([[vals[f] for f in feature_names]], columns=feature_names)
-    prediction  = model.predict(input_df)[0]
-    proba       = model.predict_proba(input_df)[0]
-    prob_d      = float(proba[1]) * 100
-    prob_nd     = float(proba[0]) * 100
+    # ── Idle state — show welcome message until a button is pressed ─────────
+    active_view = st.session_state.get("active_view", None)
 
-    is_high = prob_d >= 70; is_med = 40 <= prob_d < 70
-    r_lbl   = "HIGH RISK" if is_high else ("MODERATE RISK" if is_med else "LOW RISK")
-    r_clr   = "#DC2626"   if is_high else ("#F59E0B" if is_med else "#16A34A")
-    r_bg    = "#FEF2F2"   if is_high else ("#FFFBEB" if is_med else "#F0FDF4")
-    r_brd   = "#FECACA"   if is_high else ("#FDE68A" if is_med else "#BBF7D0")
-    r_icon  = "🔴" if is_high else ("🟡" if is_med else "🟢")
-    conf_lbl = "High" if abs(prob_d-50)>30 else "Moderate"
-    conf_clr = "#16A34A" if conf_lbl=="High" else "#F59E0B"
+    if active_view is None:
+        st.markdown("""
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                    min-height:340px;gap:14px;padding:32px 16px;text-align:center;">
+          <div style="width:64px;height:64px;border-radius:50%;background:#EFF6FF;
+                      display:flex;align-items:center;justify-content:center;
+                      box-shadow:0 4px 16px rgba(37,99,235,0.12);">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#2563EB"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:16px;font-weight:800;color:#1E293B;margin-bottom:6px;">
+              Ready to Analyze
+            </div>
+            <div style="font-size:11px;color:#64748B;line-height:1.6;max-width:340px;font-weight:500;">
+              Fill in the patient details in the left panel, then click
+              <strong style="color:#2563EB;">🩺 Predict Risk</strong> to view the full dashboard.
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px;">
+            <span style="font-size:9.5px;font-weight:600;color:#64748B;background:#F8FAFC;
+                         border:1px solid #E2E8F0;border-radius:6px;padding:4px 10px;">
+              ⚙️ XGBoost Model
+            </span>
+            <span style="font-size:9.5px;font-weight:600;color:#64748B;background:#F8FAFC;
+                         border:1px solid #E2E8F0;border-radius:6px;padding:4px 10px;">
+              🔍 SHAP + LIME Explainability
+            </span>
+            <span style="font-size:9.5px;font-weight:600;color:#64748B;background:#F8FAFC;
+                         border:1px solid #E2E8F0;border-radius:6px;padding:4px 10px;">
+              📊 Risk Visualization
+            </span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    shap_fig = lime_fig = radar_fig = None
-    shap_labels = shap_values_row = lime_labels = lime_values = []
+    else:
+        # ── Build input & run prediction ──────────────────────────────────────
+        vals = {
+            "age": age, "sex": 1 if sex=="Male" else 0,
+            "chest_pain_type": cp_map[cp],
+            "resting_blood_pressure": trestbps,
+            "cholesterol": chol, "fbs": fbs_map[fbs],
+            "restecg": restecg_map[restecg], "max_heart_rate": thalach,
+            "exercise_induced_angina": exang_map[exang],
+            "oldpeak": oldpeak, "slope": slope_map[slope],
+            "major_vessels": ca, "thalassemia": thal_map[thal],
+        }
+        input_df    = pd.DataFrame([[vals[f] for f in feature_names]], columns=feature_names)
+        prediction  = model.predict(input_df)[0]
+        proba       = model.predict_proba(input_df)[0]
+        prob_d      = float(proba[1]) * 100
+        prob_nd     = float(proba[0]) * 100
 
-    try:
-        import shap
-        explainer = shap.TreeExplainer(model)
-        sv        = explainer.shap_values(input_df)
-        shap_fig, shap_labels, shap_values_row = shap_bar(sv, feature_names)
-    except Exception:
-        pass
+        is_high = prob_d >= 70; is_med = 40 <= prob_d < 70
+        r_lbl   = "HIGH RISK" if is_high else ("MODERATE RISK" if is_med else "LOW RISK")
+        r_clr   = "#DC2626"   if is_high else ("#F59E0B" if is_med else "#16A34A")
+        r_bg    = "#FEF2F2"   if is_high else ("#FFFBEB" if is_med else "#F0FDF4")
+        r_brd   = "#FECACA"   if is_high else ("#FDE68A" if is_med else "#BBF7D0")
+        r_icon  = "🔴" if is_high else ("🟡" if is_med else "🟢")
+        conf_lbl = "High" if abs(prob_d-50)>30 else "Moderate"
+        conf_clr = "#16A34A" if conf_lbl=="High" else "#F59E0B"
 
-    try:
-        lr = lime_explainer.explain_instance(
-            input_df.values[0],
-            model.predict_proba,
-            num_features=10,
-            top_labels=1
-        )
-        lkey = list(lr.local_exp.keys())[0]
-        ll = [(feature_names[i], w) for i, w in lr.local_exp[lkey]]
-        lime_fig, lime_labels, lime_values = lime_bar(ll)
-    except Exception:
-        pass
+        shap_fig = lime_fig = radar_fig = None
+        shap_labels = shap_values_row = lime_labels = lime_values = []
 
-    if shap_fig and lime_fig:
         try:
-            radar_fig = radar_chart(shap_labels, shap_values_row, lime_labels, lime_values)
+            import shap
+            explainer = shap.TreeExplainer(model)
+            sv        = explainer.shap_values(input_df)
+            shap_fig, shap_labels, shap_values_row = shap_bar(sv, feature_names)
         except Exception:
             pass
 
-    def draw_svg_gauge(prob, clr_text):
-        import math
-        theta = math.pi * (1.0 - prob / 100.0)
-        r_needle = 50
-        x_end = 80 + r_needle * math.cos(theta)
-        y_end = 75 - r_needle * math.sin(theta)
-        
-        svg = f"""
-        <svg viewBox="0 0 160 88" style="width: 100%; max-height: 110px; overflow: visible;">
-          <defs>
-            <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stop-color="#22C55E" />
-              <stop offset="40%" stop-color="#EAB308" />
-              <stop offset="70%" stop-color="#F97316" />
-              <stop offset="100%" stop-color="#EF4444" />
-            </linearGradient>
-          </defs>
-          <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="#F1F5F9" stroke-width="9" stroke-linecap="round" />
-          <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="url(#gauge-grad)" stroke-width="9" stroke-linecap="round" />
-          <line x1="80" y1="75" x2="{x_end}" y2="{y_end}" stroke="#0F172A" stroke-width="3" stroke-linecap="round" />
-          <circle cx="80" cy="75" r="4.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5" />
-          <text x="80" y="54" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="16" fill="{clr_text}">{prob:.1f}%</text>
-          <text x="80" y="66" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="7" fill="#64748B">Risk of Heart Disease</text>
-          <text x="20" y="86" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="6.5" fill="#94A3B8">0%</text>
-          <text x="140" y="86" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="6.5" fill="#94A3B8">100%</text>
-        </svg>
-        """
-        return svg
-
-    # ── ROW 1 ────────────────────────────────────────────────────────────────
-    c1, c2 = st.columns([1.8, 1.0], gap="small")
-
-    with c1:
-        st.markdown("""
-        <div style="margin-bottom: 2px;">
-          <div style="font-size: 11px; font-weight: 700; color: #1E293B; display: flex; align-items: center; gap: 4px;">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-            Risk Overview
-          </div>
-          <div style="font-size: 9px; color: #64748B; margin-left: 17px; margin-top: 1px;">Probability of Heart Disease</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        pred_txt = ("Likely to have heart disease."
-                    if prediction==1 else
-                    "Unlikely to have heart disease.")
-        
-        import streamlit.components.v1 as components
-        
-        gauge_svg_html = draw_svg_gauge(prob_d, r_clr)
-        
-        # Determine HTML badges for Prediction, Risk Level, Confidence
-        pred_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #EF4444; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">1 (Disease)</span>' if prediction==1 else f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">0 (No Disease)</span>'
-        risk_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {r_clr}; background: {r_bg}; border: 1px solid {r_brd}; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{r_lbl}</span>'
-        conf_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{conf_lbl}</span>' if conf_lbl=="High" else f'<span style="font-size: 8.5px; font-weight: 700; color: #F59E0B; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{conf_lbl}</span>'
-
-        html_code = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body {{
-              margin: 0;
-              padding: 0;
-              background-color: transparent;
-              font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-              overflow: hidden;
-            }}
-            .card-container {{
-              display: flex;
-              flex-direction: row;
-              align-items: center;
-              gap: 14px;
-              width: 100%;
-              height: 110px;
-              box-sizing: border-box;
-            }}
-            .left-side {{
-              flex: 1.1;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              text-align: center;
-            }}
-            .gauge-container {{
-              width: 100%;
-              max-width: 140px;
-              margin-bottom: 2px;
-            }}
-            .status-pill-container {{
-              margin-top: -6px;
-              margin-bottom: 4px;
-            }}
-            .status-pill {{
-              display: inline-block;
-              background: {r_bg};
-              border: 1.5px solid {r_brd};
-              color: {r_clr};
-              border-radius: 999px;
-              padding: 2px 10px;
-              font-size: 8.5px;
-              font-weight: 700;
-              text-transform: uppercase;
-              letter-spacing: 0.05em;
-            }}
-            .status-sub {{
-              font-size: 8px;
-              color: #64748B;
-              margin-top: 2px;
-              font-weight: 500;
-            }}
-            .divider {{
-              width: 1px;
-              background: #F1F5F9;
-              align-self: stretch;
-              margin: 4px 0;
-            }}
-            .right-side {{
-              flex: 1.0;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              gap: 5px;
-              padding-left: 4px;
-            }}
-            .detail-box {{
-              background: #FAFBFC;
-              border: 1px solid #E2E8F0;
-              border-radius: 8px;
-              padding: 5px 12px;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              box-shadow: 0 1px 2px rgba(0,0,0,0.01);
-              box-sizing: border-box;
-            }}
-            .detail-label {{
-              font-size: 8.5px;
-              color: #64748B;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 0.05em;
-            }}
-          </style>
-        </head>
-        <body>
-          <div class="card-container">
-            <div class="left-side">
-              <div class="gauge-container">
-                {gauge_svg_html}
-              </div>
-              <div class="status-pill-container">
-                <div class="status-pill">{r_lbl}</div>
-                <div class="status-sub">{pred_txt}</div>
-              </div>
-            </div>
-            
-            <div class="divider"></div>
-            
-            <div class="right-side">
-              <div class="detail-box">
-                <span class="detail-label">Prediction</span>
-                {pred_badge}
-              </div>
-              <div class="detail-box">
-                <span class="detail-label">Risk Level</span>
-                {risk_badge}
-              </div>
-              <div class="detail-box">
-                <span class="detail-label">Confidence</span>
-                {conf_badge}
-              </div>
-            </div>
-          </div>
-        </body>
-        </html>
-        """
-        components.html(html_code, height=115)
-
-    with c2:
-        st.markdown(f"""
-        <div style="margin-bottom: 4px;">
-          <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 6px;">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-            Prediction Summary
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        icon_target = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>'
-        icon_shield = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 11 2 2 4-4"></path></svg>'
-        icon_gear = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'
-        icon_chart = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>'
-        icon_star = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
-        
-        def summary_row(icon_svg, label, value, last=False):
-            border_style = "" if last else "border-bottom: 1px solid #F1F5F9;"
-            return f"""
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 2px 0; {border_style}">
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <div style="width: 18px; height: 18px; border-radius: 5px; background: #EFF6FF; color: #2563EB; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  {icon_svg}
-                </div>
-                <span style="font-size: 9.5px; color: #475569; font-weight: 600;">{label}</span>
-              </div>
-              {value}
-            </div>
-            """
-        
-        # Compute dynamic badges for Prediction Summary values
-        p_dis_clr = "#EF4444" if prob_d >= 70 else ("#F59E0B" if prob_d >= 40 else "#22C55E")
-        p_dis_bg = "#FEF2F2" if prob_d >= 70 else ("#FFFBEB" if prob_d >= 40 else "#F0FDF4")
-        p_dis_brd = "#FECACA" if prob_d >= 70 else ("#FDE68A" if prob_d >= 40 else "#BBF7D0")
-        p_dis_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {p_dis_clr}; background: {p_dis_bg}; border: 1px solid {p_dis_brd}; border-radius: 5px; padding: 2px 7px;">{prob_d:.1f}%</span>'
-
-        p_ndis_clr = "#22C55E" if prob_nd >= 70 else ("#F59E0B" if prob_nd >= 40 else "#EF4444")
-        p_ndis_bg = "#F0FDF4" if prob_nd >= 70 else ("#FFFBEB" if prob_nd >= 40 else "#FEF2F2")
-        p_ndis_brd = "#BBF7D0" if prob_nd >= 70 else ("#FDE68A" if prob_nd >= 40 else "#FECACA")
-        p_ndis_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {p_ndis_clr}; background: {p_ndis_bg}; border: 1px solid {p_ndis_brd}; border-radius: 5px; padding: 2px 7px;">{prob_nd:.1f}%</span>'
-
-        model_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #2563EB; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 5px; padding: 2px 7px;">XGBoost</span>'
-        acc_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #475569; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 2px 7px;">~85%</span>'
-        conf_summary_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 5px; padding: 2px 7px;">High</span>' if conf_lbl=="High" else f'<span style="font-size: 8.5px; font-weight: 700; color: #F59E0B; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 5px; padding: 2px 7px;">Moderate</span>'
-
-        rows_html = (
-            summary_row(icon_target, "Prob. (Disease)", p_dis_badge) +
-            summary_row(icon_shield, "Prob. (No Disease)", p_ndis_badge) +
-            summary_row(icon_gear, "Model Used", model_badge) +
-            summary_row(icon_chart, "Model Accuracy", acc_badge) +
-            summary_row(icon_star, "Confidence", conf_summary_badge, last=True)
-        )
-        st.markdown(rows_html, unsafe_allow_html=True)
-
-    # ── ROW 2: Explainability ─────────────────────────────────────────────────
-    st.markdown("""
-    <div style="font-size: 12.5px; font-weight: 800; color: #2563EB; margin-top: 12px; margin-bottom: 8px; padding-left: 6px; border-left: 3px solid #2563EB; line-height: 1.1;">
-      Explainability Dashboard
-    </div>""", unsafe_allow_html=True)
-
-    e1, e2, e3 = st.columns([1.0, 1.0, 1.0], gap="small")
-
-    with e1:
-        st.markdown("""
-        <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size: 11px; font-weight: 700; color: #1E293B;">SHAP Explanation</div>
-            <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Top Features (Impact on Prediction)</div>
-          </div>
-          <div style="color: #94A3B8; cursor: pointer;" title="SHAP (SHapley Additive exPlanations) shows how each feature contributes to the prediction compared to the average model prediction.">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-          </div>
-        </div>""", unsafe_allow_html=True)
-        if shap_fig:
-            st.plotly_chart(shap_fig, use_container_width=True,
-                            config={"displayModeBar": False})
-            st.markdown("""
-            <div style="display:flex;gap:12px;justify-content:center;font-size:9.5px;
-                        color:#64748B;padding-bottom:0px;margin-top:2px;">
-              <span style="display:flex;align-items:center;gap:3px;">
-                <i style="width:8px;height:8px;background:#EF4444;border-radius:2px;display:inline-block;"></i>
-                Increase Risk</span>
-              <span style="display:flex;align-items:center;gap:3px;">
-                <i style="width:8px;height:8px;background:#3B82F6;border-radius:2px;display:inline-block;"></i>
-                Decrease Risk</span>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.info("SHAP data unavailable.")
-
-    with e2:
-        st.markdown("""
-        <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size: 11px; font-weight: 700; color: #1E293B;">LIME Explanation</div>
-            <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Local Feature Importance (LIME)</div>
-          </div>
-          <div style="color: #94A3B8; cursor: pointer;" title="LIME (Local Interpretable Model-agnostic Explanations) builds a local surrogate model around the patient's data point to explain the decision.">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-          </div>
-        </div>""", unsafe_allow_html=True)
-        if lime_fig:
-            st.plotly_chart(lime_fig, use_container_width=True,
-                            config={"displayModeBar": False})
-            st.markdown("""
-            <div style="display:flex;gap:12px;justify-content:center;font-size:9.5px;
-                        color:#64748B;padding-bottom:0px;margin-top:2px;">
-              <span style="display:flex;align-items:center;gap:3px;">
-                <i style="width:8px;height:8px;background:#22C55E;border-radius:2px;display:inline-block;"></i>
-                Positive Impact</span>
-              <span style="display:flex;align-items:center;gap:3px;">
-                <i style="width:8px;height:8px;background:#EF4444;border-radius:2px;display:inline-block;"></i>
-                Negative Impact</span>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.info("LIME data unavailable.")
-
-    with e3:
-        st.markdown("""
-        <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size: 11px; font-weight: 700; color: #1E293B;">SHAP vs LIME Comparison</div>
-            <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Feature Importance Comparison</div>
-          </div>
-          <div style="color: #94A3B8; cursor: pointer;" title="Comparison of feature importance values normalized between SHAP and LIME.">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-          </div>
-        </div>""", unsafe_allow_html=True)
-        if radar_fig:
-            st.plotly_chart(radar_fig, use_container_width=True,
-                            config={"displayModeBar": False})
-        else:
-            st.info("Radar comparison unavailable.")
-
-    # ── ROW 3: Feature Impact + Recommendation ────────────────────────────────
-    risk_factors, safe_factors = [], []
-    if shap_labels and shap_values_row:
-        for lbl, v in zip(shap_labels, shap_values_row):
-            if v > 0.005:   risk_factors.append(lbl)
-            elif v < -0.005: safe_factors.append(lbl)
-    else:
-        if oldpeak > 1.5:                   risk_factors.append("oldpeak")
-        if chol > 240:                      risk_factors.append("cholesterol")
-        if exang == "Yes":                  risk_factors.append("exercise_induced_angina")
-        if cp == "Asymptomatic":            risk_factors.append("chest_pain_type")
-        if thalach > 140:                   safe_factors.append("max_heart_rate")
-        if restecg == "Normal":             safe_factors.append("restecg")
-        if ca == 0:                         safe_factors.append("major_vessels")
-        if exang == "No":                   safe_factors.append("exercise_induced_angina")
-
-    def get_factor_desc(feature_name):
-        fname = str(feature_name).lower()
-        if "age" in fname:
-            return f"Age ({age} years)"
-        elif "sex" in fname:
-            return "Male Patient" if sex == "Male" else "Female Patient"
-        elif "chest" in fname or "cp" in fname:
-            return f"Chest Pain: {cp}"
-        elif "blood" in fname or "bp" in fname or "bps" in fname or "trest" in fname:
-            return f"Resting BP ({trestbps} mm Hg)"
-        elif "chol" in fname:
-            return f"Cholesterol ({chol} mg/dl)"
-        elif "fbs" in fname or "sugar" in fname:
-            return "Fasting Blood Sugar > 120 mg/dl" if fbs.startswith("Yes") else "Normal Blood Sugar"
-        elif "ecg" in fname or "restecg" in fname:
-            return f"Resting ECG: {restecg}"
-        elif "heart" in fname or "rate" in fname or "thalach" in fname:
-            return f"Max Heart Rate ({thalach} bpm)"
-        elif "angina" in fname or "exang" in fname:
-            return "Exercise Induced Angina" if exang == "Yes" else "No Exercise Induced Angina"
-        elif "oldpeak" in fname or "depression" in fname:
-            return f"ST Depression ({oldpeak})"
-        elif "slope" in fname:
-            return f"ST Slope: {slope}"
-        elif "vessel" in fname or "ca" in fname:
-            return f"Major Vessels Blocked: {ca}"
-        elif "thal" in fname:
-            return f"Thalassemia: {thal}"
-        return str(feature_name)
-
-    risk_bullets = "".join([f'<li>{get_factor_desc(f)}</li>' for f in risk_factors[:4]]) or \
-                   '<li>No significant risk-increasing factors</li>'
-    safe_bullets = "".join([f'<li>{get_factor_desc(f)}</li>' for f in safe_factors[:4]]) or \
-                   '<li>No significant protective factors detected</li>'
-
-    # Recommendation text
-    if prob_d >= 70:
-        r_card_bg, r_card_brd = "#FEF2F2", "#FECACA"
-        rx_title = "Immediate Medical Attention Required"
-        rx_short = "Consult a cardiologist immediately for diagnostic evaluation and necessary medical tests."
-    elif prob_d >= 40:
-        r_card_bg, r_card_brd = "#FFFBEB", "#FDE68A"
-        rx_title = "Further Medical Evaluation Recommended"
-        rx_short = "Further evaluation is recommended — consider a lipid profile, stress test, and lifestyle counseling."
-    else:
-        r_card_bg, r_card_brd = "#F0FDF4", "#BBF7D0"
-        rx_title = "Low Risk — Continue Preventive Care"
-        rx_short = "Continue healthy lifestyle: regular exercise, balanced diet, and routine annual check-ups."
-
-    # Base64 encode heart image
-    import base64
-    import os
-    from PIL import Image
-    from io import BytesIO
-    heart_b64 = ""
-    if os.path.exists("heart_indicator.png"):
         try:
-            with Image.open("heart_indicator.png") as img:
-                img.thumbnail((100, 100))  # Resize to max 100x100 for crisp display
-                buffered = BytesIO()
-                img.save(buffered, format="PNG")
-                heart_b64 = base64.b64encode(buffered.getvalue()).decode()
+            lr = lime_explainer.explain_instance(
+                input_df.values[0],
+                model.predict_proba,
+                num_features=10,
+                top_labels=1
+            )
+            lkey = list(lr.local_exp.keys())[0]
+            ll = [(feature_names[i], w) for i, w in lr.local_exp[lkey]]
+            lime_fig, lime_labels, lime_values = lime_bar(ll)
         except Exception:
+            pass
+
+        if shap_fig and lime_fig:
             try:
-                with open("heart_indicator.png", "rb") as f:
-                    heart_b64 = base64.b64encode(f.read()).decode()
+                radar_fig = radar_chart(shap_labels, shap_values_row, lime_labels, lime_values)
             except Exception:
                 pass
 
-    fi1, fi2 = st.columns([1.6, 1.2], gap="small")
+        def draw_svg_gauge(prob, clr_text):
+            import math
+            theta = math.pi * (1.0 - prob / 100.0)
+            r_needle = 50
+            x_end = 80 + r_needle * math.cos(theta)
+            y_end = 75 - r_needle * math.sin(theta)
+            svg = f"""
+            <svg viewBox="0 0 160 88" style="width: 100%; max-height: 110px; overflow: visible;">
+              <defs>
+                <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#22C55E" />
+                  <stop offset="40%" stop-color="#EAB308" />
+                  <stop offset="70%" stop-color="#F97316" />
+                  <stop offset="100%" stop-color="#EF4444" />
+                </linearGradient>
+              </defs>
+              <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="#F1F5F9" stroke-width="9" stroke-linecap="round" />
+              <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="url(#gauge-grad)" stroke-width="9" stroke-linecap="round" />
+              <line x1="80" y1="75" x2="{x_end}" y2="{y_end}" stroke="#0F172A" stroke-width="3" stroke-linecap="round" />
+              <circle cx="80" cy="75" r="4.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5" />
+              <text x="80" y="54" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="16" fill="{clr_text}">{prob:.1f}%</text>
+              <text x="80" y="66" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="7" fill="#64748B">Risk of Heart Disease</text>
+              <text x="20" y="86" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="6.5" fill="#94A3B8">0%</text>
+              <text x="140" y="86" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="6.5" fill="#94A3B8">100%</text>
+            </svg>
+            """
+            return svg
 
-    with fi1:
-        st.markdown(f"""
-        <div style="margin-bottom: 4px;">
-          <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 4px;">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-            Feature Impact Summary
-          </div>
-        </div>
-        
-        <div style="display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; min-height: 108px;">
-          <!-- Risk Increasing Factors -->
-          <div style="flex: 1; min-width: 190px; display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; border: 1px solid #FECACA; border-radius: 10px; background: #FEF2F2; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
-            <div style="width: 20px; height: 20px; border-radius: 50%; background: #EF4444; color: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(239,68,68,0.2);">
-              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-            </div>
-            <div>
-              <div style="font-size: 10.5px; font-weight: 700; color: #991B1B; margin-bottom: 2px;">Risk Increasing Factors</div>
-              <ul class="risk-list">
-                {risk_bullets}
-              </ul>
-            </div>
-          </div>
-          
-          <!-- Risk Decreasing Factors -->
-          <div style="flex: 1; min-width: 190px; display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; border: 1px solid #BBF7D0; border-radius: 10px; background: #F0FDF4; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
-            <div style="width: 20px; height: 20px; border-radius: 50%; background: #22C55E; color: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(34,197,94,0.2);">
-              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
-            </div>
-            <div>
-              <div style="font-size: 10.5px; font-weight: 700; color: #166534; margin-bottom: 2px;">Risk Decreasing Factors</div>
-              <ul class="safe-list">
-                {safe_bullets}
-              </ul>
-            </div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── PREDICT RESULTS view: focused summary card ───────────────────────
+        if active_view == "results":
+            import streamlit.components.v1 as components
+            gauge_svg_html = draw_svg_gauge(prob_d, r_clr)
+            pred_txt = ("Likely to have heart disease." if prediction == 1
+                        else "Unlikely to have heart disease.")
+            pred_badge = (
+                f'<span style="font-size:11px;font-weight:700;color:#EF4444;'
+                f'background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:3px 10px;">1 — Disease</span>'
+                if prediction == 1 else
+                f'<span style="font-size:11px;font-weight:700;color:#22C55E;'
+                f'background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:3px 10px;">0 — No Disease</span>'
+            )
+            conf_badge = (
+                f'<span style="font-size:11px;font-weight:700;color:#22C55E;background:#F0FDF4;'
+                f'border:1px solid #BBF7D0;border-radius:6px;padding:3px 10px;">High</span>'
+                if conf_lbl == "High" else
+                f'<span style="font-size:11px;font-weight:700;color:#F59E0B;background:#FFFBEB;'
+                f'border:1px solid #FDE68A;border-radius:6px;padding:3px 10px;">Moderate</span>'
+            )
+            results_html = f"""
+            <!DOCTYPE html><html><head><style>
+              body {{ margin:0; padding:0; font-family:'Plus Jakarta Sans',-apple-system,sans-serif; background:transparent; }}
+              .results-card {{ background:#FFFFFF; border:1.5px solid #E2E8F0; border-radius:16px;
+                               padding:20px 24px; box-shadow:0 4px 24px -4px rgba(37,99,235,0.10); }}
+              .results-title {{ font-size:13px; font-weight:800; color:#1E293B; margin-bottom:16px;
+                                display:flex; align-items:center; gap:8px; border-bottom:1px solid #F1F5F9; padding-bottom:10px; }}
+              .gauge-wrap {{ display:flex; justify-content:center; margin-bottom:16px; }}
+              .row {{ display:flex; justify-content:space-between; align-items:center;
+                      padding:8px 0; border-bottom:1px solid #F8FAFC; }}
+              .row:last-child {{ border-bottom:none; }}
+              .row-label {{ font-size:10px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.05em; }}
+              .risk-pill {{ display:inline-block; background:{r_bg}; border:1.5px solid {r_brd};
+                            color:{r_clr}; border-radius:999px; padding:4px 14px;
+                            font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; }}
+              .disclaimer {{ font-size:8.5px; color:#94A3B8; text-align:center; margin-top:14px; font-weight:500; }}
+            </style></head><body>
+              <div class="results-card">
+                <div class="results-title">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#2563EB" stroke-width="2.5"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                  </svg>
+                  Prediction Results
+                </div>
+                <div class="gauge-wrap">{gauge_svg_html}</div>
+                <div style="text-align:center; margin-bottom:14px;">
+                  <div class="risk-pill">{r_icon}&nbsp; {r_lbl}</div>
+                  <div style="font-size:9.5px;color:#64748B;margin-top:6px;font-weight:500;">{pred_txt}</div>
+                </div>
+                <div class="row">
+                  <span class="row-label">Prediction</span>
+                  {pred_badge}
+                </div>
+                <div class="row">
+                  <span class="row-label">Disease Probability</span>
+                  <span style="font-size:13px;font-weight:800;color:{r_clr};">{prob_d:.1f}%</span>
+                </div>
+                <div class="row">
+                  <span class="row-label">No-Disease Probability</span>
+                  <span style="font-size:13px;font-weight:800;color:#22C55E;">{prob_nd:.1f}%</span>
+                </div>
+                <div class="row">
+                  <span class="row-label">Confidence</span>
+                  {conf_badge}
+                </div>
+                <div class="row">
+                  <span class="row-label">Model</span>
+                  <span style="font-size:11px;font-weight:700;color:#2563EB;background:#EFF6FF;
+                               border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;">⚙️ XGBoost</span>
+                </div>
+                <div class="disclaimer">⚕️ For educational purposes only. Not a substitute for medical advice.</div>
+              </div>
+            </body></html>
+            """
+            components.html(results_html, height=500, scrolling=False)
 
-    with fi2:
-        recommendation_card_html = f"""<div style="display: flex; flex-direction: column; justify-content: space-between; min-height: 108px; height: 100%;">
-        <div style="margin-bottom: 4px;">
-          <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 6px;">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-            Recommendation
-          </div>
-        </div>
-        <div style="display: flex; gap: 10px; align-items: center; background: {r_card_bg}; border: 1px solid {r_card_brd}; border-radius: 10px; padding: 10px 12px; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
-          <div style="flex: 1;">
-            <div style="font-size: 10px; font-weight: 800; color: #1E293B; margin-bottom: 3px;">{rx_title}</div>
-            <div style="font-size: 8.5px; color: #475569; line-height: 1.35; font-weight: 500;">
-              This patient is at <strong>{r_lbl}</strong>.<br>
-              {rx_short}
-            </div>
-          </div>"""
-        if heart_b64:
-            recommendation_card_html += f"""
-          <div style="width: 50px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-            <img src="data:image/png;base64,{heart_b64}" style="width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(220,38,38,0.1));" />
-          </div>"""
-        recommendation_card_html += """</div></div>"""
-        st.markdown(recommendation_card_html, unsafe_allow_html=True)
+        # ── PREDICT RISK view: full dashboard ────────────────────────────────
+        else:
+            # ── ROW 1 ────────────────────────────────────────────────────────
+            c1, c2 = st.columns([1.8, 1.0], gap="small")
 
-    # ── Footer ───────────────────────────────────────────────────────────────────
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; box-shadow: var(--card-shadow);">
-      <div style="display: flex; align-items: center; gap: 6px; color: #64748B; font-size: 9.5px; font-weight: 500;">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #94A3B8;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-        Disclaimer: This tool is for educational purposes only. Not a substitute for medical advice.
-      </div>
-      <div style="display: flex; align-items: center; gap: 4px; color: #64748B; font-size: 9.5px; font-weight: 600;">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #94A3B8;"><path d="M12 22c5.523 0 10-2.239 10-5V5c0-2.761-4.477-5-10-5S2 2.239 2 5v12c0 2.761 4.477 5 10 5z"></path><path d="M2 5c0 2.761 4.477 5 10 5s10-2.239 10-5"></path><path d="M2 11c0 2.761 4.477 5 10 5s10-2.239 10-5"></path></svg>
-        UCI Heart Disease Dataset
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+            with c1:
+                st.markdown("""
+                <div style="margin-bottom: 2px;">
+                  <div style="font-size: 11px; font-weight: 700; color: #1E293B; display: flex; align-items: center; gap: 4px;">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Risk Overview
+                  </div>
+                  <div style="font-size: 9px; color: #64748B; margin-left: 17px; margin-top: 1px;">Probability of Heart Disease</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                pred_txt = ("Likely to have heart disease."
+                            if prediction==1 else
+                            "Unlikely to have heart disease.")
+                
+                import streamlit.components.v1 as components
+                
+                gauge_svg_html = draw_svg_gauge(prob_d, r_clr)
+                
+                # Determine HTML badges for Prediction, Risk Level, Confidence
+                pred_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #EF4444; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">1 (Disease)</span>' if prediction==1 else f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">0 (No Disease)</span>'
+                risk_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {r_clr}; background: {r_bg}; border: 1px solid {r_brd}; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{r_lbl}</span>'
+                conf_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{conf_lbl}</span>' if conf_lbl=="High" else f'<span style="font-size: 8.5px; font-weight: 700; color: #F59E0B; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 2.5px 8px; text-transform: uppercase;">{conf_lbl}</span>'
+
+                html_code = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                  <style>
+                    body {{
+                      margin: 0;
+                      padding: 0;
+                      background-color: transparent;
+                      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                      overflow: hidden;
+                    }}
+                    .card-container {{
+                      display: flex;
+                      flex-direction: row;
+                      align-items: center;
+                      gap: 14px;
+                      width: 100%;
+                      height: 110px;
+                      box-sizing: border-box;
+                    }}
+                    .left-side {{
+                      flex: 1.1;
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
+                      justify-content: center;
+                      text-align: center;
+                    }}
+                    .gauge-container {{
+                      width: 100%;
+                      max-width: 140px;
+                      margin-bottom: 2px;
+                    }}
+                    .status-pill-container {{
+                      margin-top: -6px;
+                      margin-bottom: 4px;
+                    }}
+                    .status-pill {{
+                      display: inline-block;
+                      background: {r_bg};
+                      border: 1.5px solid {r_brd};
+                      color: {r_clr};
+                      border-radius: 999px;
+                      padding: 2px 10px;
+                      font-size: 8.5px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                    }}
+                    .status-sub {{
+                      font-size: 8px;
+                      color: #64748B;
+                      margin-top: 2px;
+                      font-weight: 500;
+                    }}
+                    .divider {{
+                      width: 1px;
+                      background: #F1F5F9;
+                      align-self: stretch;
+                      margin: 4px 0;
+                    }}
+                    .right-side {{
+                      flex: 1.0;
+                      display: flex;
+                      flex-direction: column;
+                      justify-content: center;
+                      gap: 5px;
+                      padding-left: 4px;
+                    }}
+                    .detail-box {{
+                      background: #FAFBFC;
+                      border: 1px solid #E2E8F0;
+                      border-radius: 8px;
+                      padding: 5px 12px;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      box-shadow: 0 1px 2px rgba(0,0,0,0.01);
+                      box-sizing: border-box;
+                    }}
+                    .detail-label {{
+                      font-size: 8.5px;
+                      color: #64748B;
+                      font-weight: 600;
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                    }}
+                  </style>
+                </head>
+                <body>
+                  <div class="card-container">
+                    <div class="left-side">
+                      <div class="gauge-container">
+                        {gauge_svg_html}
+                      </div>
+                      <div class="status-pill-container">
+                        <div class="status-pill">{r_lbl}</div>
+                        <div class="status-sub">{pred_txt}</div>
+                      </div>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="right-side">
+                      <div class="detail-box">
+                        <span class="detail-label">Prediction</span>
+                        {pred_badge}
+                      </div>
+                      <div class="detail-box">
+                        <span class="detail-label">Risk Level</span>
+                        {risk_badge}
+                      </div>
+                      <div class="detail-box">
+                        <span class="detail-label">Confidence</span>
+                        {conf_badge}
+                      </div>
+                    </div>
+                  </div>
+                </body>
+                </html>
+                """
+                components.html(html_code, height=115)
+
+            with c2:
+                st.markdown(f"""
+                <div style="margin-bottom: 4px;">
+                  <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 6px;">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    Prediction Summary
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                icon_target = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>'
+                icon_shield = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 11 2 2 4-4"></path></svg>'
+                icon_gear = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'
+                icon_chart = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>'
+                icon_star = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
+                
+                def summary_row(icon_svg, label, value, last=False):
+                    border_style = "" if last else "border-bottom: 1px solid #F1F5F9;"
+                    return f"""
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 2px 0; {border_style}">
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <div style="width: 18px; height: 18px; border-radius: 5px; background: #EFF6FF; color: #2563EB; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                          {icon_svg}
+                        </div>
+                        <span style="font-size: 9.5px; color: #475569; font-weight: 600;">{label}</span>
+                      </div>
+                      {value}
+                    </div>
+                    """
+                
+                # Compute dynamic badges for Prediction Summary values
+                p_dis_clr = "#EF4444" if prob_d >= 70 else ("#F59E0B" if prob_d >= 40 else "#22C55E")
+                p_dis_bg = "#FEF2F2" if prob_d >= 70 else ("#FFFBEB" if prob_d >= 40 else "#F0FDF4")
+                p_dis_brd = "#FECACA" if prob_d >= 70 else ("#FDE68A" if prob_d >= 40 else "#BBF7D0")
+                p_dis_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {p_dis_clr}; background: {p_dis_bg}; border: 1px solid {p_dis_brd}; border-radius: 5px; padding: 2px 7px;">{prob_d:.1f}%</span>'
+
+                p_ndis_clr = "#22C55E" if prob_nd >= 70 else ("#F59E0B" if prob_nd >= 40 else "#EF4444")
+                p_ndis_bg = "#F0FDF4" if prob_nd >= 70 else ("#FFFBEB" if prob_nd >= 40 else "#FEF2F2")
+                p_ndis_brd = "#BBF7D0" if prob_nd >= 70 else ("#FDE68A" if prob_nd >= 40 else "#FECACA")
+                p_ndis_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: {p_ndis_clr}; background: {p_ndis_bg}; border: 1px solid {p_ndis_brd}; border-radius: 5px; padding: 2px 7px;">{prob_nd:.1f}%</span>'
+
+                model_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #2563EB; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 5px; padding: 2px 7px;">XGBoost</span>'
+                acc_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #475569; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 2px 7px;">~98.53%</span>'
+                conf_summary_badge = f'<span style="font-size: 8.5px; font-weight: 700; color: #22C55E; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 5px; padding: 2px 7px;">High</span>' if conf_lbl=="High" else f'<span style="font-size: 8.5px; font-weight: 700; color: #F59E0B; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 5px; padding: 2px 7px;">Moderate</span>'
+
+                rows_html = (
+                    summary_row(icon_target, "Prob. (Disease)", p_dis_badge) +
+                    summary_row(icon_shield, "Prob. (No Disease)", p_ndis_badge) +
+                    summary_row(icon_gear, "Model Used", model_badge) +
+                    summary_row(icon_chart, "Model Accuracy", acc_badge) +
+                    summary_row(icon_star, "Confidence", conf_summary_badge, last=True)
+                )
+                st.markdown(rows_html, unsafe_allow_html=True)
+
+            # ── ROW 2: Explainability ─────────────────────────────────────────────────
+            st.markdown("""
+            <div style="font-size: 12.5px; font-weight: 800; color: #2563EB; margin-top: 12px; margin-bottom: 8px; padding-left: 6px; border-left: 3px solid #2563EB; line-height: 1.1;">
+              Explainability Dashboard
+            </div>""", unsafe_allow_html=True)
+
+            e1, e2, e3 = st.columns([1.0, 1.0, 1.0], gap="small")
+
+            with e1:
+                st.markdown("""
+                <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700; color: #1E293B;">SHAP Explanation</div>
+                    <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Top Features (Impact on Prediction)</div>
+                  </div>
+                  <div style="color: #94A3B8; cursor: pointer;" title="SHAP (SHapley Additive exPlanations) shows how each feature contributes to the prediction compared to the average model prediction.">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                if shap_fig:
+                    st.plotly_chart(shap_fig, use_container_width=True,
+                                    config={"displayModeBar": False})
+                    st.markdown("""
+                    <div style="display:flex;gap:12px;justify-content:center;font-size:9.5px;
+                                color:#64748B;padding-bottom:0px;margin-top:2px;">
+                      <span style="display:flex;align-items:center;gap:3px;">
+                        <i style="width:8px;height:8px;background:#EF4444;border-radius:2px;display:inline-block;"></i>
+                        Increase Risk</span>
+                      <span style="display:flex;align-items:center;gap:3px;">
+                        <i style="width:8px;height:8px;background:#3B82F6;border-radius:2px;display:inline-block;"></i>
+                        Decrease Risk</span>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.info("SHAP data unavailable.")
+
+            with e2:
+                st.markdown("""
+                <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700; color: #1E293B;">LIME Explanation</div>
+                    <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Local Feature Importance (LIME)</div>
+                  </div>
+                  <div style="color: #94A3B8; cursor: pointer;" title="LIME (Local Interpretable Model-agnostic Explanations) builds a local surrogate model around the patient's data point to explain the decision.">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                if lime_fig:
+                    st.plotly_chart(lime_fig, use_container_width=True,
+                                    config={"displayModeBar": False})
+                    st.markdown("""
+                    <div style="display:flex;gap:12px;justify-content:center;font-size:9.5px;
+                                color:#64748B;padding-bottom:0px;margin-top:2px;">
+                      <span style="display:flex;align-items:center;gap:3px;">
+                        <i style="width:8px;height:8px;background:#22C55E;border-radius:2px;display:inline-block;"></i>
+                        Positive Impact</span>
+                      <span style="display:flex;align-items:center;gap:3px;">
+                        <i style="width:8px;height:8px;background:#EF4444;border-radius:2px;display:inline-block;"></i>
+                        Negative Impact</span>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.info("LIME data unavailable.")
+
+            with e3:
+                st.markdown("""
+                <div style="padding-bottom: 4px; border-bottom: 1px solid #F1F5F9; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700; color: #1E293B;">SHAP vs LIME Comparison</div>
+                    <div style="font-size: 8.5px; color: #64748B; margin-top: 1px;">Feature Importance Comparison</div>
+                  </div>
+                  <div style="color: #94A3B8; cursor: pointer;" title="Comparison of feature importance values normalized between SHAP and LIME.">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                if radar_fig:
+                    st.plotly_chart(radar_fig, use_container_width=True,
+                                    config={"displayModeBar": False})
+                else:
+                    st.info("Radar comparison unavailable.")
+
+            # ── ROW 3: Feature Impact + Recommendation ────────────────────────────────
+            risk_factors, safe_factors = [], []
+            if shap_labels and shap_values_row:
+                for lbl, v in zip(shap_labels, shap_values_row):
+                    if v > 0.005:   risk_factors.append(lbl)
+                    elif v < -0.005: safe_factors.append(lbl)
+            else:
+                if oldpeak > 1.5:                   risk_factors.append("oldpeak")
+                if chol > 240:                      risk_factors.append("cholesterol")
+                if exang == "Yes":                  risk_factors.append("exercise_induced_angina")
+                if cp == "Asymptomatic":            risk_factors.append("chest_pain_type")
+                if thalach > 140:                   safe_factors.append("max_heart_rate")
+                if restecg == "Normal":             safe_factors.append("restecg")
+                if ca == 0:                         safe_factors.append("major_vessels")
+                if exang == "No":                   safe_factors.append("exercise_induced_angina")
+
+            def get_factor_desc(feature_name):
+                fname = str(feature_name).lower()
+                if "age" in fname:
+                    return f"Age ({age} years)"
+                elif "sex" in fname:
+                    return "Male Patient" if sex == "Male" else "Female Patient"
+                elif "chest" in fname or "cp" in fname:
+                    return f"Chest Pain: {cp}"
+                elif "blood" in fname or "bp" in fname or "bps" in fname or "trest" in fname:
+                    return f"Resting BP ({trestbps} mm Hg)"
+                elif "chol" in fname:
+                    return f"Cholesterol ({chol} mg/dl)"
+                elif "fbs" in fname or "sugar" in fname:
+                    return "Fasting Blood Sugar > 120 mg/dl" if fbs.startswith("Yes") else "Normal Blood Sugar"
+                elif "ecg" in fname or "restecg" in fname:
+                    return f"Resting ECG: {restecg}"
+                elif "heart" in fname or "rate" in fname or "thalach" in fname:
+                    return f"Max Heart Rate ({thalach} bpm)"
+                elif "angina" in fname or "exang" in fname:
+                    return "Exercise Induced Angina" if exang == "Yes" else "No Exercise Induced Angina"
+                elif "oldpeak" in fname or "depression" in fname:
+                    return f"ST Depression ({oldpeak})"
+                elif "slope" in fname:
+                    return f"ST Slope: {slope}"
+                elif "vessel" in fname or "ca" in fname:
+                    return f"Major Vessels Blocked: {ca}"
+                elif "thal" in fname:
+                    return f"Thalassemia: {thal}"
+                return str(feature_name)
+
+            risk_bullets = "".join([f'<li>{get_factor_desc(f)}</li>' for f in risk_factors[:4]]) or \
+                           '<li>No significant risk-increasing factors</li>'
+            safe_bullets = "".join([f'<li>{get_factor_desc(f)}</li>' for f in safe_factors[:4]]) or \
+                           '<li>No significant protective factors detected</li>'
+
+            # Recommendation text
+            if prob_d >= 70:
+                r_card_bg, r_card_brd = "#FEF2F2", "#FECACA"
+                rx_title = "Immediate Medical Attention Required"
+                rx_short = "Consult a cardiologist immediately for diagnostic evaluation and necessary medical tests."
+            elif prob_d >= 40:
+                r_card_bg, r_card_brd = "#FFFBEB", "#FDE68A"
+                rx_title = "Further Medical Evaluation Recommended"
+                rx_short = "Further evaluation is recommended — consider a lipid profile, stress test, and lifestyle counseling."
+            else:
+                r_card_bg, r_card_brd = "#F0FDF4", "#BBF7D0"
+                rx_title = "Low Risk — Continue Preventive Care"
+                rx_short = "Continue healthy lifestyle: regular exercise, balanced diet, and routine annual check-ups."
+
+            # Base64 encode heart image
+            import base64
+            import os
+            from PIL import Image
+            from io import BytesIO
+            heart_b64 = ""
+            if os.path.exists("heart_indicator.png"):
+                try:
+                    with Image.open("heart_indicator.png") as img:
+                        img.thumbnail((100, 100))  # Resize to max 100x100 for crisp display
+                        buffered = BytesIO()
+                        img.save(buffered, format="PNG")
+                        heart_b64 = base64.b64encode(buffered.getvalue()).decode()
+                except Exception:
+                    try:
+                        with open("heart_indicator.png", "rb") as f:
+                            heart_b64 = base64.b64encode(f.read()).decode()
+                    except Exception:
+                        pass
+
+            fi1, fi2 = st.columns([1.6, 1.2], gap="small")
+
+            with fi1:
+                st.markdown(f"""
+                <div style="margin-bottom: 4px;">
+                  <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 4px;">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+                    Feature Impact Summary
+                  </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; min-height: 108px;">
+                  <!-- Risk Increasing Factors -->
+                  <div style="flex: 1; min-width: 190px; display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; border: 1px solid #FECACA; border-radius: 10px; background: #FEF2F2; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #EF4444; color: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(239,68,68,0.2);">
+                      <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                    </div>
+                    <div>
+                      <div style="font-size: 10.5px; font-weight: 700; color: #991B1B; margin-bottom: 2px;">Risk Increasing Factors</div>
+                      <ul class="risk-list">
+                        {risk_bullets}
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <!-- Risk Decreasing Factors -->
+                  <div style="flex: 1; min-width: 190px; display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; border: 1px solid #BBF7D0; border-radius: 10px; background: #F0FDF4; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #22C55E; color: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(34,197,94,0.2);">
+                      <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                    </div>
+                    <div>
+                      <div style="font-size: 10.5px; font-weight: 700; color: #166534; margin-bottom: 2px;">Risk Decreasing Factors</div>
+                      <ul class="safe-list">
+                        {safe_bullets}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with fi2:
+                recommendation_card_html = f"""<div style="display: flex; flex-direction: column; justify-content: space-between; min-height: 108px; height: 100%;">
+                <div style="margin-bottom: 4px;">
+                  <div style="font-size: 11px; font-weight: 700; color: #2563EB; display: flex; align-items: center; gap: 6px;">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    Recommendation
+                  </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; background: {r_card_bg}; border: 1px solid {r_card_brd}; border-radius: 10px; padding: 10px 12px; min-height: 108px; height: auto; box-sizing: border-box; box-shadow: 0 1px 2px rgba(0,0,0,0.01);">
+                  <div style="flex: 1;">
+                    <div style="font-size: 10px; font-weight: 800; color: #1E293B; margin-bottom: 3px;">{rx_title}</div>
+                    <div style="font-size: 8.5px; color: #475569; line-height: 1.35; font-weight: 500;">
+                      This patient is at <strong>{r_lbl}</strong>.<br>
+                      {rx_short}
+                    </div>
+                  </div>"""
+                if heart_b64:
+                    recommendation_card_html += f"""
+                  <div style="width: 50px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <img src="data:image/png;base64,{heart_b64}" style="width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(220,38,38,0.1));" />
+                  </div>"""
+                recommendation_card_html += """</div></div>"""
+                st.markdown(recommendation_card_html, unsafe_allow_html=True)
+
+            # ── Footer ───────────────────────────────────────────────────────────────────
+            st.markdown("""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; box-shadow: var(--card-shadow);">
+              <div style="display: flex; align-items: center; gap: 6px; color: #64748B; font-size: 9.5px; font-weight: 500;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #94A3B8;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px; color: #64748B; font-size: 9.5px; font-weight: 600;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #94A3B8;"><path d="M12 22c5.523 0 10-2.239 10-5V5c0-2.761-4.477-5-10-5S2 2.239 2 5v12c0 2.761 4.477 5 10 5z"></path><path d="M2 5c0 2.761 4.477 5 10 5s10-2.239 10-5"></path><path d="M2 11c0 2.761 4.477 5 10 5s10-2.239 10-5"></path></svg>
+                UCI Heart Disease Dataset
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
